@@ -1,0 +1,41 @@
+# MarkItDown 完整依赖包
+markitdown[all]==0.1.2
+
+# 核心依赖
+beautifulsoup4>=4.13.0
+charset-normalizer>=3.4.0
+defusedxml>=0.7.0
+markdownify>=1.1.0
+requests>=2.32.0
+
+# AI文件类型检测
+magika>=0.6.1
+numpy>=2.2.0
+onnxruntime>=1.22.0
+
+# Office文档支持
+mammoth>=1.9.1          # Word文档处理
+openpyxl>=3.1.5         # Excel文件
+python-pptx>=1.0.2      # PowerPoint文件
+xlrd>=2.0.1             # 老版本Excel支持
+
+# PDF支持
+pdfminer-six>=20250506
+
+# 图像处理
+Pillow>=11.2.0
+
+# 数据处理
+pandas>=2.2.0
+lxml>=5.4.0
+
+# Azure文档智能（可选）
+azure-ai-documentintelligence>=1.0.2
+azure-identity>=1.23.0
+
+# 音频处理（可选）
+pydub>=0.25.1
+speechrecognition>=3.14.0
+
+# 视频字幕API（可选）
+youtube-transcript-api>=1.0.0 
