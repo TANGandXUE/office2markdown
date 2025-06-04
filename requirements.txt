@@ -1,5 +1,8 @@
-# MarkItDown 完整依赖包
+# MarkItDown 文档转换器完整依赖
 markitdown[all]==0.1.2
+
+# Web界面
+gradio>=4.0.0
 
 # 核心依赖
 beautifulsoup4>=4.13.0
@@ -33,9 +36,6 @@ lxml>=5.4.0
 azure-ai-documentintelligence>=1.0.2
 azure-identity>=1.23.0
 
-# 音频处理（可选）
-pydub>=0.25.1
-speechrecognition>=3.14.0
-
-# 视频字幕API（可选）
-youtube-transcript-api>=1.0.0 
+# 其他依赖
+typing-extensions>=4.14.0
+pathlib>=1.0.0 
