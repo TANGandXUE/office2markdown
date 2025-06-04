@@ -1,10 +1,13 @@
 # MarkItDown 文档转换器完整依赖
+
+# 核心转换引擎
 markitdown[all]==0.1.2
 
-# Web界面
-gradio>=4.0.0
+# Web界面框架（固定版本解决兼容性问题）
+gradio==4.43.0
+fastapi==0.112.2
 
-# 核心依赖
+# 基础依赖
 beautifulsoup4>=4.13.0
 charset-normalizer>=3.4.0
 defusedxml>=0.7.0
@@ -16,26 +19,26 @@ magika>=0.6.1
 numpy>=2.2.0
 onnxruntime>=1.22.0
 
-# Office文档支持
-mammoth>=1.9.1          # Word文档处理
-openpyxl>=3.1.5         # Excel文件
-python-pptx>=1.0.2      # PowerPoint文件
-xlrd>=2.0.1             # 老版本Excel支持
+# Office文档处理
+mammoth>=1.9.1          # Word文档(.docx)
+openpyxl>=3.1.5         # Excel文件(.xlsx)
+python-pptx>=1.0.2      # PowerPoint文件(.pptx)
+xlrd>=2.0.1             # 老版本Excel支持(.xls)
 
-# PDF支持
+# PDF文档处理
 pdfminer-six>=20250506
 
 # 图像处理
 Pillow>=11.2.0
 
-# 数据处理
+# 数据分析
 pandas>=2.2.0
 lxml>=5.4.0
 
-# Azure文档智能（可选）
+# Azure AI服务（可选）
 azure-ai-documentintelligence>=1.0.2
 azure-identity>=1.23.0
 
-# 其他依赖
+# 系统工具
 typing-extensions>=4.14.0
-pathlib>=1.0.0 
+pathlib2>=2.3.0 

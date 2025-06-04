@@ -15,9 +15,13 @@ import zipfile
 from typing import List, Tuple, Optional
 import logging
 import time
+import webbrowser
+import threading
+import subprocess
+import sys
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class DocumentConverter:
@@ -108,13 +112,20 @@ def convert_single_document(file) -> Tuple[str, str]:
     
     if not converter.is_supported_file(filename):
         supported_formats = ", ".join(converter.supported_extensions)
-        return f"不支持的文件格式。支持的格式: {supported_formats}", ""
+        return f"❌ 不支持的文件格式\n支持的格式: {supported_formats}", ""
     
     success, content, error = converter.convert_single_file(file_path)
     
     if success:
-        preview = content[:500] + "..." if len(content) > 500 else content
-        status = f"✅ 转换成功: {filename}\n文件大小: {len(content)} 字符"
+        char_count = len(content)
+        word_count = len(content.split())
+        line_count = len(content.split('\n'))
+        
+        status = f"""✅ 转换成功: {filename}
+📊 统计信息:
+   • 字符数: {char_count:,}
+   • 单词数: {word_count:,}
+   • 行数: {line_count:,}"""
         return status, content
     else:
         return f"❌ 转换失败: {filename}\n错误: {error}", ""
@@ -135,15 +146,17 @@ def convert_multiple_documents(files) -> Tuple[str, Optional[str]]:
 def get_file_info(files) -> str:
     """获取上传文件的信息"""
     if not files:
-        return "未选择文件"
+        return "📂 未选择文件"
     
     info_lines = ["📁 已选择的文件:"]
     supported_count = 0
+    total_size = 0
     
     for file in files:
         filename = os.path.basename(file.name)
         file_size = os.path.getsize(file.name)
         size_mb = file_size / (1024 * 1024)
+        total_size += file_size
         
         if converter.is_supported_file(filename):
             status = "✅"
@@ -151,11 +164,25 @@ def get_file_info(files) -> str:
         else:
             status = "❌"
         
-        info_lines.append(f"{status} {filename} ({size_mb:.2f} MB)")
+        info_lines.append(f"  {status} {filename} ({size_mb:.2f} MB)")
     
-    info_lines.append(f"\n📊 支持的文件: {supported_count}/{len(files)}")
+    total_size_mb = total_size / (1024 * 1024)
+    info_lines.append(f"\n📊 文件统计:")
+    info_lines.append(f"  • 总文件数: {len(files)}")
+    info_lines.append(f"  • 支持的文件: {supported_count}")
+    info_lines.append(f"  • 总大小: {total_size_mb:.2f} MB")
     
     return "\n".join(info_lines)
+
+def save_single_result(content, filename="converted_document.md"):
+    """保存单文件转换结果"""
+    if not content.strip():
+        return None
+    
+    temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8')
+    temp_file.write(content)
+    temp_file.close()
+    return temp_file.name
 
 def create_interface():
     """创建Gradio界面"""
@@ -163,150 +190,229 @@ def create_interface():
     # 自定义CSS
     custom_css = """
     .gradio-container {
-        max-width: 1200px !important;
+        max-width: 1400px !important;
+        margin: 0 auto !important;
     }
     .file-info {
         background-color: #f8f9fa;
         border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 20px;
+        margin: 15px 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .status-success {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
         border-radius: 8px;
         padding: 15px;
-        margin: 10px 0;
     }
-    .success-text {
-        color: #28a745;
+    .status-error {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+        border-radius: 8px;
+        padding: 15px;
     }
-    .error-text {
-        color: #dc3545;
+    .main-header {
+        text-align: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
     }
     """
     
     with gr.Blocks(
         title="📄 MarkItDown 文档转换器", 
-        theme=gr.themes.Soft(),
+        theme=gr.themes.Soft(
+            primary_hue="blue",
+            secondary_hue="cyan",
+            neutral_hue="slate"
+        ),
         css=custom_css
     ) as demo:
         
-        gr.Markdown("""
-        # 📄 MarkItDown 文档转换器
-        
-        将 Office 文档转换为 Markdown 格式，支持实时预览和批量处理
-        
-        **支持格式**: docx, doc, pdf, pptx, xlsx, html, htm
+        # 主标题
+        gr.HTML("""
+        <div class="main-header">
+            <h1>📄 MarkItDown 文档转换器</h1>
+            <p>智能文档转换工具 • 支持批量处理 • 实时预览</p>
+            <p><strong>支持格式:</strong> docx, doc, pdf, pptx, xlsx, html, htm</p>
+        </div>
         """)
         
-        with gr.Tabs():
+        with gr.Tabs() as tabs:
             # 单文件转换标签页
-            with gr.TabItem("🔄 单文件转换"):
+            with gr.TabItem("🔄 单文件转换", elem_id="single-tab"):
                 with gr.Row():
-                    with gr.Column(scale=1):
-                        single_file_input = gr.File(
-                            label="上传文档文件",
-                            file_types=[".docx", ".doc", ".pdf", ".pptx", ".xlsx", ".html", ".htm"]
-                        )
-                        single_convert_btn = gr.Button("🚀 开始转换", variant="primary")
-                        
                     with gr.Column(scale=2):
+                        single_file_input = gr.File(
+                            label="📎 上传文档文件",
+                            file_types=[".docx", ".doc", ".pdf", ".pptx", ".xlsx", ".html", ".htm"],
+                            height=150
+                        )
+                        
+                        with gr.Row():
+                            single_convert_btn = gr.Button(
+                                "🚀 开始转换", 
+                                variant="primary", 
+                                size="lg",
+                                scale=2
+                            )
+                            single_clear_btn = gr.Button(
+                                "🗑️ 清除", 
+                                variant="secondary",
+                                scale=1
+                            )
+                        
+                    with gr.Column(scale=3):
                         single_status = gr.Textbox(
-                            label="转换状态",
-                            lines=3,
-                            interactive=False
+                            label="📊 转换状态",
+                            lines=6,
+                            interactive=False,
+                            elem_classes=["file-info"]
                         )
                 
                 gr.Markdown("### 📖 转换结果预览")
                 single_output = gr.Textbox(
                     label="Markdown 内容",
-                    lines=15,
-                    max_lines=20,
+                    lines=20,
+                    max_lines=25,
                     interactive=False,
-                    show_copy_button=True
+                    show_copy_button=True,
+                    placeholder="转换结果将在这里显示..."
                 )
                 
-                # 下载按钮
                 single_download = gr.File(
-                    label="下载 Markdown 文件",
+                    label="💾 下载 Markdown 文件",
                     visible=False
                 )
             
             # 批量转换标签页
-            with gr.TabItem("📁 批量转换"):
+            with gr.TabItem("📁 批量转换", elem_id="batch-tab"):
                 with gr.Row():
-                    with gr.Column(scale=1):
+                    with gr.Column(scale=2):
                         multi_file_input = gr.File(
-                            label="上传多个文档文件",
+                            label="📎 上传多个文档文件",
                             file_count="multiple",
-                            file_types=[".docx", ".doc", ".pdf", ".pptx", ".xlsx", ".html", ".htm"]
+                            file_types=[".docx", ".doc", ".pdf", ".pptx", ".xlsx", ".html", ".htm"],
+                            height=200
                         )
                         
                         file_info_display = gr.Textbox(
-                            label="文件信息",
-                            lines=8,
+                            label="📋 文件信息",
+                            lines=12,
                             interactive=False,
-                            elem_classes=["file-info"]
+                            elem_classes=["file-info"],
+                            placeholder="选择文件后将显示详细信息..."
                         )
                         
-                        multi_convert_btn = gr.Button("🚀 批量转换", variant="primary")
+                        with gr.Row():
+                            multi_convert_btn = gr.Button(
+                                "🚀 批量转换", 
+                                variant="primary", 
+                                size="lg",
+                                scale=2
+                            )
+                            multi_clear_btn = gr.Button(
+                                "🗑️ 清除", 
+                                variant="secondary",
+                                scale=1
+                            )
                     
-                    with gr.Column(scale=1):
+                    with gr.Column(scale=2):
                         multi_status = gr.Textbox(
-                            label="转换日志",
-                            lines=15,
-                            interactive=False
+                            label="📊 转换日志",
+                            lines=20,
+                            interactive=False,
+                            elem_classes=["file-info"],
+                            placeholder="转换日志将在这里显示..."
                         )
                         
                         multi_download = gr.File(
-                            label="下载转换结果 (ZIP)",
+                            label="💾 下载转换结果 (ZIP)",
                             visible=False
                         )
             
-            # 关于标签页
-            with gr.TabItem("ℹ️ 关于"):
+            # 使用帮助标签页
+            with gr.TabItem("❓ 使用帮助", elem_id="help-tab"):
                 gr.Markdown("""
-                ## 🛠️ 技术说明
+                ## 🎯 快速上手指南
                 
-                本工具基于 Microsoft 的 MarkItDown 项目构建：
-                - **GitHub**: https://github.com/microsoft/markitdown
-                - **版本**: 0.1.2
-                - **核心功能**: 利用 AI 技术进行智能文档解析和转换
+                ### 🔄 单文件转换
+                1. **上传文件**: 点击上传区域或拖拽文件到指定位置
+                2. **开始转换**: 点击"开始转换"按钮
+                3. **查看结果**: 在预览区域查看转换后的Markdown内容
+                4. **下载文件**: 点击下载按钮保存.md文件
                 
-                ## 📋 使用说明
+                ### 📁 批量转换
+                1. **选择多个文件**: 同时上传多个文档（支持拖拽）
+                2. **检查文件信息**: 确认文件格式和大小
+                3. **批量转换**: 点击"批量转换"按钮
+                4. **下载ZIP包**: 获取包含所有转换结果的压缩包
                 
-                ### 单文件转换
-                1. 点击 "单文件转换" 标签页
-                2. 上传一个支持的文档文件
-                3. 点击 "开始转换" 按钮
-                4. 查看转换结果和预览
+                ## 📋 支持格式详情
                 
-                ### 批量转换
-                1. 点击 "批量转换" 标签页
-                2. 同时上传多个文档文件
-                3. 查看文件信息确认支持情况
-                4. 点击 "批量转换" 按钮
-                5. 下载包含所有转换结果的 ZIP 文件
+                | 格式 | 扩展名 | 转换质量 | 说明 |
+                |------|--------|----------|------|
+                | **Word文档** | `.docx` | ⭐⭐⭐⭐⭐ | 完美支持，推荐格式 |
+                | **Word文档** | `.doc` | ⭐⭐⭐ | 基本支持，可能有兼容性问题 |
+                | **PDF文档** | `.pdf` | ⭐⭐⭐⭐ | 文本PDF支持良好 |
+                | **PowerPoint** | `.pptx` | ⭐⭐⭐⭐ | 幻灯片内容转换 |
+                | **Excel表格** | `.xlsx` | ⭐⭐⭐⭐ | 表格数据转换 |
+                | **网页文件** | `.html`, `.htm` | ⭐⭐⭐⭐⭐ | 完美支持 |
+                
+                ## ⚡ 性能优化建议
+                
+                - **文件大小**: 建议单个文件不超过 50MB
+                - **批量处理**: 建议同时处理的文件数量不超过 20个
+                - **网络要求**: 首次使用需要联网下载依赖包
+                - **内存使用**: 大文件转换时建议关闭其他程序
                 
                 ## ⚠️ 注意事项
                 
-                - **文件大小**: 建议单个文件不超过 50MB
-                - **格式支持**: .docx 支持最佳，.doc 格式可能有兼容性问题
-                - **复杂格式**: 表格、图片等复杂格式会尽力保持，但可能需要手动调整
-                - **处理时间**: 大文件或批量文件可能需要较长处理时间
+                ### 文档质量
+                - 复杂的表格和图片可能需要手动调整
+                - 公式和特殊符号转换效果因文档而异
+                - 建议转换后检查重要内容的完整性
                 
-                ## 🔧 环境要求
+                ### 隐私安全
+                - 所有转换操作在本地进行，不会上传到外部服务器
+                - 临时文件会在处理完成后自动清理
+                - 建议在安全的网络环境中使用
                 
-                - Python 3.12+
-                - MarkItDown[all] 包
-                - Gradio 界面库
+                ## 🐛 故障排除
+                
+                ### 常见问题
+                
+                **Q: 转换失败怎么办？**
+                - 检查文件是否损坏
+                - 确认文件格式是否支持
+                - 查看错误信息获取具体原因
+                
+                **Q: 转换速度慢？**
+                - 大文件转换需要更多时间
+                - 检查系统资源使用情况
+                - 尝试重启程序释放内存
+                
+                **Q: 无法打开网页？**
+                - 确认地址是 http://localhost:7860
+                - 检查防火墙设置
+                - 尝试使用不同的浏览器
+                
+                ## 🔧 技术支持
+                
+                如需技术支持，请提供以下信息：
+                - 操作系统版本
+                - Python版本
+                - 错误日志信息
+                - 问题文件类型和大小
                 """)
         
         # 事件绑定
-        def save_single_result(content, filename="converted.md"):
-            """保存单文件转换结果"""
-            if not content.strip():
-                return None
-            
-            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8')
-            temp_file.write(content)
-            temp_file.close()
-            return temp_file.name
         
         # 单文件转换事件
         single_convert_btn.click(
@@ -315,11 +421,17 @@ def create_interface():
             outputs=[single_status, single_output]
         )
         
-        # 当有转换结果时，自动创建下载文件
+        # 自动生成下载文件
         single_output.change(
-            fn=lambda content: save_single_result(content) if content.strip() else None,
+            fn=lambda content: save_single_result(content) if content and content.strip() else None,
             inputs=[single_output],
             outputs=[single_download]
+        )
+        
+        # 单文件清除按钮
+        single_clear_btn.click(
+            fn=lambda: (None, "", "", None),
+            outputs=[single_file_input, single_status, single_output, single_download]
         )
         
         # 批量转换事件
@@ -334,18 +446,73 @@ def create_interface():
             inputs=[multi_file_input],
             outputs=[multi_status, multi_download]
         )
+        
+        # 批量清除按钮
+        multi_clear_btn.click(
+            fn=lambda: (None, "", "", None),
+            outputs=[multi_file_input, file_info_display, multi_status, multi_download]
+        )
     
     return demo
 
+def open_browser():
+    """延迟打开浏览器"""
+    time.sleep(4)  # 等待服务器启动
+    
+    url = "http://localhost:7860"
+    print("🌐 正在打开浏览器...")
+    
+    try:
+        # 优先使用Windows系统命令
+        if sys.platform == "win32":
+            subprocess.run(["start", url], shell=True, check=True)
+            print("✅ 浏览器已启动 (系统命令)")
+            return
+    except Exception as e:
+        print(f"⚠️ 系统命令失败: {e}")
+    
+    try:
+        # 备用方案：使用webbrowser模块
+        success = webbrowser.open(url)
+        if success:
+            print("✅ 浏览器已启动 (webbrowser)")
+        else:
+            print("❌ webbrowser.open返回False")
+    except Exception as e:
+        print(f"⚠️ webbrowser启动失败: {e}")
+        
+    # 如果都失败了，提示用户手动访问
+    print(f"📋 如果浏览器未自动打开，请手动访问: {url}")
+
 if __name__ == "__main__":
+    print("🚀 正在启动 MarkItDown 文档转换器...")
+    print("📱 Web界面地址: http://localhost:7860")
+    print("⏹️  按 Ctrl+C 停止服务器")
+    print("-" * 50)
+    
     # 创建并启动界面
     demo = create_interface()
     
+    # 在后台线程中打开浏览器
+    browser_thread = threading.Thread(target=open_browser)
+    browser_thread.daemon = True
+    browser_thread.start()
+    
     # 启动服务器
-    demo.launch(
-        server_name="0.0.0.0",  # 允许外部访问
-        server_port=7860,       # 默认端口
-        share=False,            # 不创建公共链接
-        show_error=True,        # 显示错误信息
-        quiet=False             # 显示启动信息
-    ) 
+    try:
+        demo.launch(
+            server_name="127.0.0.1",
+            server_port=7860,
+            share=False,
+            show_error=True,
+            quiet=False,
+            show_api=False,
+            favicon_path=None,
+            ssl_verify=False,
+            inbrowser=False  # 禁用gradio自动打开浏览器，使用我们的自定义方法
+        )
+    except KeyboardInterrupt:
+        print("\n👋 感谢使用 MarkItDown 文档转换器！")
+    except Exception as e:
+        print(f"❌ 启动失败: {e}")
+        input("按任意键退出...") 
